@@ -17,12 +17,15 @@ warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import tensorflow as tf
-from tensorflow import keras
+import tensorflow.keras as keras
+
+from tensorflow.keras import layers
+
 from keras.models import Sequential, load_model
 from keras.layers import LSTM, Dense, Dropout, Input, BatchNormalization
 from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from keras.optimizers import Adam
-
+from keras.utils import custom_object_scope 
 # Constants
 WEATHER_API_KEY = "d9812e87c02c43b5a9590308250703"
 WEATHER_BASE_URL = "http://api.weatherapi.com/v1"
@@ -32,7 +35,22 @@ METRICS_DIR = "C:\\Users\\harsh\\Desktop\\utd\\utd\\extract\\lstm\\metrics"
 # Create directories if they don't exist
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(METRICS_DIR, exist_ok=True)
-
+@tf.keras.utils.register_keras_serializable(package='custom_losses')
+def custom_loss(y_true, y_pred):
+    """
+    Custom weighted loss function for multi-output prediction
+    
+    Args:
+        y_true (tensor): True values
+        y_pred (tensor): Predicted values
+    
+    Returns:
+        tensor: Weighted mean squared error
+    """
+    weights = tf.constant([0.4, 0.3, 0.2, 0.1], dtype=tf.float32)
+    squared_errors = tf.square(y_true - y_pred)
+    weighted_errors = tf.multiply(squared_errors, weights)
+    return tf.reduce_mean(weighted_errors)
 class TrafficPredictionSystem:
     def __init__(self, speed_data_path, detector_distances_path):
         self.speed_data_path = speed_data_path
@@ -54,27 +72,6 @@ class TrafficPredictionSystem:
         self.n_features = len(self.feature_columns) + len(self.additional_features)  # Total features
         self.n_outputs = 4  # speed, flow, occupancy, time
 
-    def load_trained_model(self, filename=None):
-        if not filename:
-            model_files = [f for f in os.listdir(MODEL_DIR) if f.endswith('.keras') or f.endswith('.h5')]
-            if not model_files:
-                print("No model files found.")
-                return False
-        
-            model_files.sort(key=lambda x: os.path.getmtime(os.path.join(MODEL_DIR, x)), reverse=True)
-            filename = model_files[0]
-    
-        model_path = os.path.join(MODEL_DIR, filename)
-    
-        try:
-            self.model = load_model(model_path, custom_objects={
-                'masked_mse': self.build_model().loss
-            })
-            print(f"Model loaded from {model_path}")
-            return True
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            return False
 
     def prepare_training_data(self):
         """Prepare sequences for LSTM training with correct feature dimensionality"""
@@ -164,66 +161,6 @@ class TrafficPredictionSystem:
             print(f"Error preparing training data: {e}")
             return None, None, None, None
 
-    def build_model(self):
-        """Build and compile the LSTM model with correct input shape"""
-        print("Building LSTM model...")
-        
-        def custom_loss(y_true, y_pred):
-            """Custom loss function with weighted MSE"""
-            weights = tf.constant([0.4, 0.3, 0.2, 0.1], dtype=tf.float32)
-            squared_errors = tf.square(y_true - y_pred)
-            weighted_errors = tf.multiply(squared_errors, weights)
-            return tf.reduce_mean(weighted_errors)
-        
-        # Clear any existing models
-        tf.keras.backend.clear_session()
-        
-        try:
-            input_shape = (self.sequence_length, self.n_features)
-            print(f"Building model with input shape: {input_shape}")
-            
-            model = Sequential([
-                Input(shape=input_shape),
-                LSTM(128, return_sequences=True, 
-                     kernel_initializer='he_normal',
-                     recurrent_initializer='orthogonal'),
-                BatchNormalization(),
-                Dropout(0.3),
-                
-                LSTM(64, return_sequences=True,
-                     kernel_initializer='he_normal',
-                     recurrent_initializer='orthogonal'),
-                BatchNormalization(),
-                Dropout(0.3),
-                
-                LSTM(32,
-                     kernel_initializer='he_normal',
-                     recurrent_initializer='orthogonal'),
-                BatchNormalization(),
-                Dropout(0.2),
-                
-                Dense(16, activation='relu'),
-                BatchNormalization(),
-                Dropout(0.1),
-                
-                Dense(self.n_outputs, activation='linear')
-            ])
-            
-            optimizer = Adam(learning_rate=0.001)
-            
-            model.compile(
-                optimizer=optimizer,
-                loss=custom_loss,
-                metrics=['mae', 'mse']
-            )
-            
-            model.summary()
-            self.model = model
-            return model
-            
-        except Exception as e:
-            print(f"Error building model: {e}")
-            return None
 
     def build_graph(self):
         """Build graph representations for path finding"""
@@ -350,94 +287,142 @@ class TrafficPredictionSystem:
             return path, distance
         except nx.NetworkXNoPath:
             return None, None
+    def load_trained_model(self, filename=None):
+        """
+        Load a pre-trained model with custom loss function
+        
+        Args:
+            filename (str, optional): Name of the model file. Defaults to most recent.
+        
+        Returns:
+            bool: Whether model was successfully loaded
+        """
+        if not filename:
+            model_files = [f for f in os.listdir(MODEL_DIR) if f.endswith('.keras') or f.endswith('.h5')]
+            if not model_files:
+                print("No model files found.")
+                return False
+            
+            model_files.sort(key=lambda x: os.path.getmtime(os.path.join(MODEL_DIR, x)), reverse=True)
+            filename = model_files[0]
 
-    
-   
-    
-
-    def train_model(self, epochs=100, batch_size=32, patience=10):
-        """Train the LSTM model with improved training process"""
-        if self.model is None:
-            self.build_model()
+        model_path = os.path.join(MODEL_DIR, filename)
+        
+        # First, try to load the scalers
+        scaler_loaded = self.load_scalers(filename)
+        if not scaler_loaded:
+            print("Warning: Could not load scalers. Predictions may be inaccurate.")
         
         try:
-            X_train, X_test, y_train, y_test = self.prepare_training_data()
+            # Try different approaches to load the model
+            try:
+                # First try with custom loss
+                from keras.utils import custom_object_scope
+                with custom_object_scope({'custom_loss': custom_loss}):
+                    self.model = keras.models.load_model(model_path)
+            except:
+                # If that fails, try standard MSE loss
+                self.model = keras.models.load_model(model_path)
             
-            # Validate data
-            if any(x is None for x in [X_train, X_test, y_train, y_test]):
-                raise ValueError("Data preparation failed")
+            print(f"Model loaded successfully from {model_path}")
+            return True
+        except Exception as e:
+            print(f"Error loading model: {e}")
             
-            # Generate timestamp
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            model_filename = f"traffic_model_{timestamp}.keras"
-            model_path = os.path.join(MODEL_DIR, model_filename)
+            # If all loading attempts fail, build a new model
+            print("Could not load the existing model. You need to train a new model.")
+            return False
+
+
+    def build_model(self):
+        """Build and compile the LSTM model with reduced complexity"""
+        print("Building LSTM model...")
+        # Clear any existing models
+        tf.keras.backend.clear_session()
+        
+        try:
+            input_shape = (self.sequence_length, self.n_features)
+            print(f"Building model with input shape: {input_shape}")
             
-            # Enhanced callbacks
-            callbacks = [
-                EarlyStopping(
-                    monitor='val_loss',
-                    patience=patience,
-                    restore_best_weights=True,
-                    verbose=1
-                ),
-                ModelCheckpoint(
-                    model_path,
-                    monitor='val_loss',
-                    save_best_only=True,
-                    mode='min',
-                    verbose=1
-                ),
-                ReduceLROnPlateau(
-                    monitor='val_loss',
-                    factor=0.5,
-                    patience=5,
-                    min_lr=0.0001,
-                    verbose=1
-                )
-            ]
+            model = Sequential([
+                # Input layer
+                Input(shape=input_shape),
+                
+                # First LSTM layer
+                LSTM(64, return_sequences=True, 
+                    kernel_initializer='glorot_uniform',  # Changed initializer
+                    recurrent_initializer='orthogonal'),
+                BatchNormalization(),
+                Dropout(0.3),
+                
+                # Second LSTM layer (final)
+                LSTM(32,
+                    kernel_initializer='glorot_uniform',  # Changed initializer
+                    recurrent_initializer='orthogonal'),
+                BatchNormalization(),
+                Dropout(0.3),
+                
+                # Dense layers
+                Dense(16, activation='relu'),
+                BatchNormalization(),
+                Dropout(0.2),
+                
+                # Output layer
+                Dense(self.n_outputs, activation='linear')
+            ])
             
-            # Train model
-            print(f"Training model with up to {epochs} epochs (patience={patience})...")
-            history = self.model.fit(
-                X_train, y_train,
-                batch_size=batch_size,
-                epochs=epochs,
-                validation_data=(X_test, y_test),
-                callbacks=callbacks,
-                verbose=1
+            # Lower learning rate
+            optimizer = Adam(learning_rate=0.0005)
+            
+            model.compile(
+                optimizer=optimizer,
+                loss='mse',  # Use standard MSE instead of custom loss for better compatibility
+                metrics=['mae', 'mse']
             )
             
-            # Calculate predictions and metrics
-            y_pred_scaled = self.model.predict(X_test)
-            y_pred = self.scaler_y.inverse_transform(y_pred_scaled)
-            y_actual = self.scaler_y.inverse_transform(y_test)
-            
-            # Calculate detailed metrics
-            metrics = {
-                "timestamp": timestamp,
-                "epochs_trained": len(history.history['loss']),
-                "max_epochs": epochs,
-                "patience": patience,
-                "final_train_loss": float(history.history['loss'][-1]),
-                "final_val_loss": float(history.history['val_loss'][-1]),
-                "model_metrics": {
-                    "mse": float(mean_squared_error(y_actual, y_pred)),
-                    "rmse": float(np.sqrt(mean_squared_error(y_actual, y_pred))),
-                    "mae": float(mean_absolute_error(y_actual, y_pred)),
-                    "r2_score": float(r2_score(y_actual.flatten(), y_pred.flatten()))
-                }
-            }
-
-            self.metrics = metrics
-            
-            # Save results
-            self._save_training_results(history, metrics, timestamp, y_actual, y_pred)
-            
-            return history, metrics
+            model.summary()
+            self.model = model
+            return model
             
         except Exception as e:
-            print(f"Error during training: {e}")
-            return None, None
+            print(f"Error building model: {e}")
+            return None
+    def save_scalers(self, timestamp):
+        """Save scalers to disk"""
+        import pickle
+        scaler_path = os.path.join(MODEL_DIR, f"traffic_model_{timestamp}_scalers.pkl")
+        
+        with open(scaler_path, 'wb') as f:
+            pickle.dump({
+                'scaler_X': self.scaler_X,
+                'scaler_y': self.scaler_y
+            }, f)
+        print(f"Scalers saved to {scaler_path}")
+        return scaler_path
+
+    def load_scalers(self, model_filename):
+        """Load scalers associated with a model"""
+        import pickle
+        # Extract timestamp from model filename
+        timestamp = model_filename.replace("traffic_model_", "").replace(".keras", "").replace(".h5", "")
+        scaler_path = os.path.join(MODEL_DIR, f"traffic_model_{timestamp}_scalers.pkl")
+        
+        if os.path.exists(scaler_path):
+            try:
+                with open(scaler_path, 'rb') as f:
+                    scalers = pickle.load(f)
+                    self.scaler_X = scalers['scaler_X']
+                    self.scaler_y = scalers['scaler_y']
+                print(f"Scalers loaded from {scaler_path}")
+                return True
+            except Exception as e:
+                print(f"Error loading scalers: {e}")
+                return False
+        else:
+            print(f"No scalers found at {scaler_path}")
+            print("Attempting to prepare scalers from data...")
+            return self.prepare_scalers()
+
     def _save_training_results(self, history, metrics, timestamp, y_actual, y_pred):
         """Save training metrics and enhanced visualizations"""
         # Save metrics to JSON
@@ -573,8 +558,148 @@ class TrafficPredictionSystem:
         
         except nx.NetworkXNoPath:
             return None, None, "No path exists between these detectors."
+    def train_model(self, epochs=100, batch_size=32, patience=10):
+        """Train the LSTM model"""
+        if self.model is None:
+            self.build_model()
+        
+        try:
+            X_train, X_test, y_train, y_test = self.prepare_training_data()
+            
+            # Validate data
+            if any(x is None for x in [X_train, X_test, y_train, y_test]):
+                raise ValueError("Data preparation failed")
+            
+            # Generate timestamp
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            model_filename = f"traffic_model_{timestamp}.h5"  # Use .h5 extension
+            model_path = os.path.join(MODEL_DIR, model_filename)
+            
+            # Save scalers along with the model
+            scaler_path = self.save_scalers(timestamp)
+            
+            # Simplified callbacks for TF 2.13.0
+            callbacks = [
+                keras.callbacks.EarlyStopping(
+                    monitor='val_loss',
+                    patience=patience,
+                    restore_best_weights=True,
+                    verbose=1
+                ),
+                # Simplified ModelCheckpoint
+                keras.callbacks.ModelCheckpoint(
+                    filepath=model_path,
+                    monitor='val_loss',
+                    save_best_only=True,
+                    verbose=1
+                ),
+                keras.callbacks.ReduceLROnPlateau(
+                    monitor='val_loss',
+                    factor=0.5,
+                    patience=5,
+                    min_lr=0.0001,
+                    verbose=1
+                )
+            ]
+            
+            # Train model
+            print(f"Training model with up to {epochs} epochs (patience={patience})...")
+            history = self.model.fit(
+                X_train, y_train,
+                batch_size=batch_size,
+                epochs=epochs,
+                validation_data=(X_test, y_test),
+                callbacks=callbacks,
+                verbose=1
+            )
+            
+            # Calculate metrics
+            print("Calculating model performance metrics...")
+            y_pred = self.model.predict(X_test)
+            y_test_inv = self.scaler_y.inverse_transform(y_test)
+            y_pred_inv = self.scaler_y.inverse_transform(y_pred)
+            
+            rmse = np.sqrt(mean_squared_error(y_test_inv, y_pred_inv))
+            mae = mean_absolute_error(y_test_inv, y_pred_inv)
+            r2 = r2_score(y_test_inv, y_pred_inv)
+            
+            metrics = {
+                "timestamp": timestamp,
+                "epochs_trained": len(history.history['loss']),
+                "final_train_loss": float(history.history['loss'][-1]),
+                "final_val_loss": float(history.history['val_loss'][-1]),
+                "model_metrics": {
+                    "rmse": float(rmse),
+                    "mae": float(mae),
+                    "r2_score": float(r2)
+                }
+            }
+            
+            # Save training results
+            self._save_training_results(history, metrics, timestamp, y_test_inv, y_pred_inv)
+            
+            print(f"Model saved to {model_path}")
+            print(f"Scalers saved to {scaler_path}")
+            
+            return history, metrics
+            
+        except Exception as e:
+            print(f"Error during training: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, None
+
+
+
+    def load_model(system):
+        print("\nLoad Existing Model")
+        print("-" * 40)
+        
+        model_files = [f for f in os.listdir(MODEL_DIR) if f.endswith('.keras') or f.endswith('.h5')]
+        
+        if not model_files:
+            print("No existing models found. Please train a new model first.")
+            return False
+        
+        print("\nAvailable models:")
+        for i, model_file in enumerate(model_files, 1):
+            modified_time = datetime.datetime.fromtimestamp(
+                os.path.getmtime(os.path.join(MODEL_DIR, model_file))
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            size_mb = os.path.getsize(os.path.join(MODEL_DIR, model_file)) / (1024*1024)
+            print(f"{i}. {model_file}")
+            print(f"   Last modified: {modified_time}")
+            print(f"   Size: {size_mb:.2f} MB")
+        
+        try:
+            model_choice = input("\nEnter model number (or press Enter for most recent): ")
+            
+            if model_choice.strip():
+                idx = int(model_choice) - 1
+                if 0 <= idx < len(model_files):
+                    model_filename = model_files[idx]
+                else:
+                    print("Invalid model number.")
+                    return False
+            else:
+                model_filename = model_files[0]  # Most recent model
+            
+            # Directly call the method on the system object with the filename
+            return system.load_trained_model(model_filename)
+            
+        except ValueError:
+            print("Invalid input. Please enter a number.")
+            return False
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            return False
     def predict_eta(self, start_detector, end_detector, current_time=None, local_weather=None):
-        """Enhanced ETA prediction with multiple path options"""
+        """Enhanced ETA prediction method with scaler preparation"""
+        # Ensure scalers are ready
+        if not hasattr(self.scaler_X, 'scale_') or not hasattr(self.scaler_y, 'scale_'):
+            print("Preparing scalers for prediction...")
+            if not self.prepare_scalers():
+                return {"error": "Could not prepare scalers for prediction"}
         if not current_time:
             current_time = datetime.datetime.now()
         
@@ -680,6 +805,35 @@ class TrafficPredictionSystem:
             }
         
         return {"error": "Could not calculate predictions"}
+    def prepare_scalers(self):
+        """
+        Prepare scalers by fitting them on training data
+        
+        Returns:
+            bool: True if scalers are successfully prepared, False otherwise
+        """
+        try:
+            # Attempt to prepare scalers using training data
+            X_train, _, y_train, _ = self.prepare_training_data()
+            
+            if X_train is not None and y_train is not None:
+                # Reshape and fit X scaler
+                n_samples, n_timesteps, n_features = X_train.shape
+                X_reshaped = X_train.reshape(-1, n_features)
+                self.scaler_X.fit(X_reshaped)
+                
+                # Fit y scaler
+                self.scaler_y.fit(y_train)
+                
+                print("Scalers prepared successfully")
+                return True
+            
+            print("Could not prepare scalers: insufficient training data")
+            return False
+        
+        except Exception as e:
+            print(f"Error preparing scalers: {e}")
+            return False
     def extract_weather_features(self, weather_data):
         """Extract relevant weather features from the API response"""
         if not weather_data:
@@ -773,52 +927,6 @@ def main():
         except Exception as e:
             print(f"\nError during training: {e}")
 
-    def load_model(system):
-        print("\nLoad Existing Model")
-        print("-" * 40)
-        
-        model_files = [f for f in os.listdir(MODEL_DIR) if f.endswith('.keras') or f.endswith('.h5')]
-        
-        if not model_files:
-            print("No existing models found. Please train a new model first.")
-            return False
-        
-        print("\nAvailable models:")
-        for i, model_file in enumerate(model_files, 1):
-            modified_time = datetime.datetime.fromtimestamp(
-                os.path.getmtime(os.path.join(MODEL_DIR, model_file))
-            ).strftime("%Y-%m-%d %H:%M:%S")
-            size_mb = os.path.getsize(os.path.join(MODEL_DIR, model_file)) / (1024*1024)
-            print(f"{i}. {model_file}")
-            print(f"   Last modified: {modified_time}")
-            print(f"   Size: {size_mb:.2f} MB")
-        
-        try:
-            model_choice = input("\nEnter model number (or press Enter for most recent): ")
-            
-            if model_choice.strip():
-                idx = int(model_choice) - 1
-                if 0 <= idx < len(model_files):
-                    success = system.load_trained_model(model_files[idx])
-                else:
-                    print("Invalid model number.")
-                    return False
-            else:
-                success = system.load_trained_model()
-            
-            if success:
-                print("Model loaded successfully.")
-                return True
-            else:
-                print("Failed to load model.")
-                return False
-            
-        except ValueError:
-            print("Invalid input. Please enter a number.")
-            return False
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            return False
     
 
     def make_prediction(system):
@@ -993,7 +1101,10 @@ def main():
             if choice == '1':
                 train_new_model(system)
             elif choice == '2':
-                load_model(system)
+                # Fix: Use the correct method to load the model
+                success = system.load_trained_model()
+                if not success:
+                    print("Failed to load model.")
             elif choice == '3':
                 make_prediction(system)
             elif choice == '4':
@@ -1015,4 +1126,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

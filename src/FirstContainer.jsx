@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import FormComponent from './FormComponent';
 import DateAndTimeComponent from './DateAndTimeComponent';
@@ -9,7 +8,9 @@ export default function FirstContainer({ onSubmit }) {
 
   const handleFormSubmit = (event) => {
     event.preventDefault();
-    onSubmit(fromValue, toValue); 
+    if (fromValue && toValue) {
+      onSubmit(fromValue, toValue);
+    }
   };
 
   return (

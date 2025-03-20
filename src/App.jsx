@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import './App.css';
 import MainHeading from './MainHeading';
@@ -16,7 +15,7 @@ function App() {
   const handleSubmit = (fromValue, toValue) => {
     setFrom(fromValue);
     setTo(toValue);
-    setSubmitted(true); 
+    setSubmitted(true);
   };
 
   return (
@@ -27,15 +26,14 @@ function App() {
       </div>
       
       <div className="m-container">
-        <div className="container" style={{maxWidth:'50%'}}>
+        <div className="container">
           <PredictionOutputComponent from={from} to={to} submitted={submitted} />
           <PredictionModelMetrics />
           {submitted && <WeatherComponent from={from} to={to} />}
         </div>
-
         <div className="map-container">
-            {submitted && <MapComponent from={from} to={to} />}
-          </div>
+          {submitted && <MapComponent from={from} to={to} />}
+        </div>
       </div>
     </>
   );

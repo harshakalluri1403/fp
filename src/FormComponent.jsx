@@ -1,4 +1,4 @@
-
+import React from 'react';
 
 export default function FormComponent({ fromValue, setFromValue, toValue, setToValue, onSubmit }) {
   return (
@@ -6,7 +6,7 @@ export default function FormComponent({ fromValue, setFromValue, toValue, setToV
       <label htmlFor="from">From:</label>
       <input
         type="text"
-        placeholder="Enter the start place..."
+        placeholder="Enter start detector (e.g., B1-3)"
         className="from"
         id="from"
         value={fromValue}
@@ -17,7 +17,7 @@ export default function FormComponent({ fromValue, setFromValue, toValue, setToV
       <label htmlFor="to">To:</label>
       <input
         type="text"
-        placeholder="Enter the destination..."
+        placeholder="Enter destination detector (e.g., B1-5)"
         className="to"
         id="to"
         value={toValue}
@@ -27,8 +27,7 @@ export default function FormComponent({ fromValue, setFromValue, toValue, setToV
       
       <label htmlFor="model">Model:</label>
       <select id="model" className="model-select">
-        <option value="standard">LSTM</option>
-        <option value="traffic-aware">GAT</option>
+        <option value="gat">GAT</option>
       </select>
       
       <button type="submit" className="submitBtn">Submit</button>

@@ -74,10 +74,7 @@ class TrafficPredictionSystem:
         # n_features will be updated when building the model
         self.n_outputs = 4  # speed, flow, occupancy, time
 
-<<<<<<< HEAD:src/Backend/lstm.py
 
-=======
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
 
     def prepare_training_data(self):
         """Prepare sequences with enhanced feature engineering"""
@@ -233,7 +230,6 @@ class TrafficPredictionSystem:
         
         return True
 
-<<<<<<< HEAD:src/Backend/lstm.py
 
     def update_feature_columns(self, new_columns):
         """Update feature columns and recalculate n_features"""
@@ -248,8 +244,6 @@ class TrafficPredictionSystem:
         
         print(f"Feature columns updated. Total features: {self.n_features}")
         return self.n_features
-=======
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
 
     def build_graph(self):
         """Build graph representations for path finding"""
@@ -396,13 +390,9 @@ class TrafficPredictionSystem:
             filename = model_files[0]
 
         model_path = os.path.join(MODEL_DIR, filename)
-<<<<<<< HEAD:src/Backend/lstm.py
         # Add this line before loading the model
         self.load_model_config(filename)
 
-=======
-        
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
         # First, try to load the scalers
         scaler_loaded = self.load_scalers(filename)
         if not scaler_loaded:
@@ -420,7 +410,6 @@ class TrafficPredictionSystem:
                 self.model = keras.models.load_model(model_path)
             
             print(f"Model loaded successfully from {model_path}")
-<<<<<<< HEAD:src/Backend/lstm.py
             
             # Check if the model is compatible with current feature set
             if not self.check_model_compatibility():
@@ -491,60 +480,6 @@ class TrafficPredictionSystem:
             model.compile(
                 optimizer=optimizer,
                 loss=tf.keras.losses.Huber(),  # More robust to outliers than MSE
-=======
-            return True
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            
-            # If all loading attempts fail, build a new model
-            print("Could not load the existing model. You need to train a new model.")
-            return False
-
-
-    def build_model(self):
-        """Build and compile the LSTM model with reduced complexity"""
-        print("Building LSTM model...")
-        # Clear any existing models
-        tf.keras.backend.clear_session()
-        
-        try:
-            input_shape = (self.sequence_length, self.n_features)
-            print(f"Building model with input shape: {input_shape}")
-            
-            model = Sequential([
-                # Input layer
-                Input(shape=input_shape),
-                
-                # First LSTM layer
-                LSTM(64, return_sequences=True, 
-                    kernel_initializer='glorot_uniform',  # Changed initializer
-                    recurrent_initializer='orthogonal'),
-                BatchNormalization(),
-                Dropout(0.3),
-                
-                # Second LSTM layer (final)
-                LSTM(32,
-                    kernel_initializer='glorot_uniform',  # Changed initializer
-                    recurrent_initializer='orthogonal'),
-                BatchNormalization(),
-                Dropout(0.3),
-                
-                # Dense layers
-                Dense(16, activation='relu'),
-                BatchNormalization(),
-                Dropout(0.2),
-                
-                # Output layer
-                Dense(self.n_outputs, activation='linear')
-            ])
-            
-            # Lower learning rate
-            optimizer = Adam(learning_rate=0.0005)
-            
-            model.compile(
-                optimizer=optimizer,
-                loss='mse',  # Use standard MSE instead of custom loss for better compatibility
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
                 metrics=['mae', 'mse']
             )
             
@@ -555,7 +490,6 @@ class TrafficPredictionSystem:
         except Exception as e:
             print(f"Error building model: {e}")
             return None
-<<<<<<< HEAD:src/Backend/lstm.py
 
     def save_model_config(self, timestamp):
         """Save model configuration including feature columns"""
@@ -569,8 +503,6 @@ class TrafficPredictionSystem:
             json.dump(config, f)
         print(f"Model configuration saved to {config_path}")
 
-=======
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
     def save_scalers(self, timestamp):
         """Save scalers to disk"""
         import pickle
@@ -742,7 +674,6 @@ class TrafficPredictionSystem:
         
         except nx.NetworkXNoPath:
             return None, None, "No path exists between these detectors."
-<<<<<<< HEAD:src/Backend/lstm.py
     def calculate_metrics(self, y_test, y_pred):
         """Calculate metrics with proper inverse scaling"""
         # Separate the predictions by target
@@ -814,12 +745,6 @@ class TrafficPredictionSystem:
         self.build_model() 
 
 
-=======
-    def train_model(self, epochs=100, batch_size=32, patience=10):
-        """Train the LSTM model"""
-        if self.model is None:
-            self.build_model()
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
         
         try:
             X_train, X_test, y_train, y_test = self.prepare_training_data()
@@ -830,7 +755,6 @@ class TrafficPredictionSystem:
             
             # Generate timestamp
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-<<<<<<< HEAD:src/Backend/lstm.py
             model_filename = f"traffic_model_{timestamp}.h5"
             model_path = os.path.join(MODEL_DIR, model_filename)
             
@@ -840,38 +764,18 @@ class TrafficPredictionSystem:
             # Callbacks
             callbacks = [
                 tf.keras.callbacks.EarlyStopping(
-=======
-            model_filename = f"traffic_model_{timestamp}.h5"  # Use .h5 extension
-            model_path = os.path.join(MODEL_DIR, model_filename)
-            
-            # Save scalers along with the model
-            scaler_path = self.save_scalers(timestamp)
-            
-            # Simplified callbacks for TF 2.13.0
-            callbacks = [
-                keras.callbacks.EarlyStopping(
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
                     monitor='val_loss',
                     patience=patience,
                     restore_best_weights=True,
                     verbose=1
                 ),
-<<<<<<< HEAD:src/Backend/lstm.py
                 tf.keras.callbacks.ModelCheckpoint(
-=======
-                # Simplified ModelCheckpoint
-                keras.callbacks.ModelCheckpoint(
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
                     filepath=model_path,
                     monitor='val_loss',
                     save_best_only=True,
                     verbose=1
                 ),
-<<<<<<< HEAD:src/Backend/lstm.py
                 tf.keras.callbacks.ReduceLROnPlateau(
-=======
-                keras.callbacks.ReduceLROnPlateau(
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
                     monitor='val_loss',
                     factor=0.5,
                     patience=5,
@@ -888,7 +792,6 @@ class TrafficPredictionSystem:
                 epochs=epochs,
                 validation_data=(X_test, y_test),
                 callbacks=callbacks,
-<<<<<<< HEAD:src/Backend/lstm.py
                 verbose=1,
                 shuffle=True  # Ensure data is shuffled
             )
@@ -919,40 +822,6 @@ class TrafficPredictionSystem:
             self.save_model_config(timestamp)
 
             return history, metrics_data
-=======
-                verbose=1
-            )
-            
-            # Calculate metrics
-            print("Calculating model performance metrics...")
-            y_pred = self.model.predict(X_test)
-            y_test_inv = self.scaler_y.inverse_transform(y_test)
-            y_pred_inv = self.scaler_y.inverse_transform(y_pred)
-            
-            rmse = np.sqrt(mean_squared_error(y_test_inv, y_pred_inv))
-            mae = mean_absolute_error(y_test_inv, y_pred_inv)
-            r2 = r2_score(y_test_inv, y_pred_inv)
-            
-            metrics = {
-                "timestamp": timestamp,
-                "epochs_trained": len(history.history['loss']),
-                "final_train_loss": float(history.history['loss'][-1]),
-                "final_val_loss": float(history.history['val_loss'][-1]),
-                "model_metrics": {
-                    "rmse": float(rmse),
-                    "mae": float(mae),
-                    "r2_score": float(r2)
-                }
-            }
-            
-            # Save training results
-            self._save_training_results(history, metrics, timestamp, y_test_inv, y_pred_inv)
-            
-            print(f"Model saved to {model_path}")
-            print(f"Scalers saved to {scaler_path}")
-            
-            return history, metrics
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
             
         except Exception as e:
             print(f"Error during training: {e}")
@@ -961,7 +830,6 @@ class TrafficPredictionSystem:
             return None, None
 
 
-<<<<<<< HEAD:src/Backend/lstm.py
     def save_all_scalers(self, timestamp):
         """Save all scalers to disk"""
         import pickle
@@ -1084,58 +952,6 @@ class TrafficPredictionSystem:
             if not self.prepare_scalers():
                 return {"error": "Could not prepare scalers for prediction"}
         
-=======
-
-    def load_model(system):
-        print("\nLoad Existing Model")
-        print("-" * 40)
-        
-        model_files = [f for f in os.listdir(MODEL_DIR) if f.endswith('.keras') or f.endswith('.h5')]
-        
-        if not model_files:
-            print("No existing models found. Please train a new model first.")
-            return False
-        
-        print("\nAvailable models:")
-        for i, model_file in enumerate(model_files, 1):
-            modified_time = datetime.datetime.fromtimestamp(
-                os.path.getmtime(os.path.join(MODEL_DIR, model_file))
-            ).strftime("%Y-%m-%d %H:%M:%S")
-            size_mb = os.path.getsize(os.path.join(MODEL_DIR, model_file)) / (1024*1024)
-            print(f"{i}. {model_file}")
-            print(f"   Last modified: {modified_time}")
-            print(f"   Size: {size_mb:.2f} MB")
-        
-        try:
-            model_choice = input("\nEnter model number (or press Enter for most recent): ")
-            
-            if model_choice.strip():
-                idx = int(model_choice) - 1
-                if 0 <= idx < len(model_files):
-                    model_filename = model_files[idx]
-                else:
-                    print("Invalid model number.")
-                    return False
-            else:
-                model_filename = model_files[0]  # Most recent model
-            
-            # Directly call the method on the system object with the filename
-            return system.load_trained_model(model_filename)
-            
-        except ValueError:
-            print("Invalid input. Please enter a number.")
-            return False
-        except Exception as e:
-            print(f"Error loading model: {e}")
-            return False
-    def predict_eta(self, start_detector, end_detector, current_time=None, local_weather=None):
-        """Enhanced ETA prediction method with scaler preparation"""
-        # Ensure scalers are ready
-        if not hasattr(self.scaler_X, 'scale_') or not hasattr(self.scaler_y, 'scale_'):
-            print("Preparing scalers for prediction...")
-            if not self.prepare_scalers():
-                return {"error": "Could not prepare scalers for prediction"}
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
         if not current_time:
             current_time = datetime.datetime.now()
         
@@ -1584,8 +1400,4 @@ def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
-<<<<<<< HEAD:src/Backend/lstm.py
     main()
-=======
-    main()
->>>>>>> 296839297b2e3230ae6d40fdc6f35c016c008a9d:lstm.py
